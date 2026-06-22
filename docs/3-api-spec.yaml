@@ -1,0 +1,1195 @@
+openapi: 3.0.0
+info:
+  title: Todolist App API
+  version: 1.0.0
+  description: >
+    Todolist App의 REST API 명세다.
+    기본 도메인은 PRD와 ERD의 할 일/태그 모델을 따른다.
+    인증은 JWT Bearer 기반이며, 서버 동기화 또는 클라우드 모드에서 사용한다.
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development
+  - url: https://api.example.com/api/v1
+    description: Production
+
+tags:
+  - name: Auth
+    description: JWT 인증 관련 엔드포인트
+  - name: Todos
+    description: 할 일 CRUD 및 완료 상태 관리
+  - name: Tags
+    description: 태그 CRUD 및 필터링 지원
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: 로그인
+      description: >
+        이메일과 비밀번호로 접근 토큰과 갱신 토큰을 발급한다.
+        이 엔드포인트는 인증이 필요하지 않다.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              default:
+                $ref: '#/components/examples/LoginRequestExample'
+      responses:
+        '200':
+          description: 로그인 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+              examples:
+                default:
+                  $ref: '#/components/examples/TokenPairExample'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: 액세스 토큰 갱신
+      description: >
+        만료된 액세스 토큰을 갱신 토큰으로 교체한다.
+        이 엔드포인트는 인증이 필요하지 않으며 refresh token만 사용한다.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            examples:
+              default:
+                $ref: '#/components/examples/RefreshRequestExample'
+      responses:
+        '200':
+          description: 토큰 갱신 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+              examples:
+                default:
+                  $ref: '#/components/examples/TokenPairExample'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: 로그아웃
+      description: >
+        현재 인증 세션 또는 refresh token을 무효화한다.
+        클라이언트는 이후 access token을 폐기해야 한다.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 로그아웃 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+              examples:
+                default:
+                  value:
+                    success: true
+                    message: 로그아웃되었습니다.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /todos:
+    get:
+      tags: [Todos]
+      summary: 할 일 목록 조회
+      description: >
+        조건에 맞는 할 일 목록을 조회한다.
+        제목 검색, 완료 여부, 마감일, 우선순위, 태그 기준 필터링과 정렬을 지원한다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          description: 제목 또는 태그명을 기준으로 검색한다.
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: isCompleted
+          in: query
+          description: 완료 여부 필터
+          required: false
+          schema:
+            type: boolean
+        - name: dueDateFrom
+          in: query
+          description: 마감일 시작 범위
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: dueDateTo
+          in: query
+          description: 마감일 종료 범위
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: priority
+          in: query
+          description: 우선순위 필터
+          required: false
+          schema:
+            type: integer
+            enum: [1, 2, 3]
+        - name: tagId
+          in: query
+          description: 특정 태그가 연결된 할 일만 조회한다.
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: sortBy
+          in: query
+          description: 정렬 기준
+          required: false
+          schema:
+            type: string
+            enum: [createdAt, updatedAt, dueDate, priority, title]
+            default: createdAt
+        - name: sortOrder
+          in: query
+          description: 정렬 방향
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: page
+          in: query
+          description: 페이지 번호
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: 페이지 크기
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: 할 일 목록 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoListResponse'
+              examples:
+                default:
+                  $ref: '#/components/examples/TodoListResponseExample'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [Todos]
+      summary: 할 일 생성
+      description: >
+        새로운 할 일을 생성한다.
+        제목은 필수이며, 마감일, 우선순위, 태그는 선택적으로 입력할 수 있다.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TodoCreateRequest'
+            examples:
+              default:
+                $ref: '#/components/examples/TodoCreateRequestExample'
+      responses:
+        '201':
+          description: 할 일 생성 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+              examples:
+                default:
+                  $ref: '#/components/examples/TodoExample'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /todos/{todoId}:
+    get:
+      tags: [Todos]
+      summary: 할 일 상세 조회
+      description: >
+        단일 할 일의 상세 정보를 조회한다.
+        응답에는 연결된 태그가 포함된다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: todoId
+          in: path
+          required: true
+          description: 조회할 할 일 ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 할 일 상세 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+              examples:
+                default:
+                  $ref: '#/components/examples/TodoExample'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      tags: [Todos]
+      summary: 할 일 수정
+      description: >
+        할 일의 제목, 마감일, 우선순위, 태그 연결을 수정한다.
+        완료 여부는 별도 completion 엔드포인트로 변경한다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: todoId
+          in: path
+          required: true
+          description: 수정할 할 일 ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TodoUpdateRequest'
+            examples:
+              default:
+                $ref: '#/components/examples/TodoUpdateRequestExample'
+      responses:
+        '200':
+          description: 할 일 수정 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+              examples:
+                default:
+                  $ref: '#/components/examples/TodoExample'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Todos]
+      summary: 할 일 삭제
+      description: >
+        할 일을 삭제한다.
+        ERD의 todo_tags는 ON DELETE CASCADE로 함께 정리된다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: todoId
+          in: path
+          required: true
+          description: 삭제할 할 일 ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 할 일 삭제 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+              examples:
+                default:
+                  value:
+                    success: true
+                    message: 할 일이 삭제되었습니다.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /todos/{todoId}/completion:
+    patch:
+      tags: [Todos]
+      summary: 완료 상태 전환
+      description: >
+        할 일의 완료/미완료 상태를 전환한다.
+        완료 상태와 완료 시각은 ERD의 CHECK 제약과 일치해야 한다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: todoId
+          in: path
+          required: true
+          description: 완료 상태를 바꿀 할 일 ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TodoCompletionRequest'
+            examples:
+              complete:
+                value:
+                  isCompleted: true
+              uncomplete:
+                value:
+                  isCompleted: false
+      responses:
+        '200':
+          description: 완료 상태 전환 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+              examples:
+                default:
+                  $ref: '#/components/examples/TodoExample'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tags:
+    get:
+      tags: [Tags]
+      summary: 태그 목록 조회
+      description: >
+        등록된 태그 목록을 조회한다.
+        태그명 검색과 정렬을 지원한다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          description: 태그 이름 검색
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: sortBy
+          in: query
+          description: 정렬 기준
+          required: false
+          schema:
+            type: string
+            enum: [name, createdAt]
+            default: createdAt
+        - name: sortOrder
+          in: query
+          description: 정렬 방향
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: page
+          in: query
+          description: 페이지 번호
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: 페이지 크기
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: 태그 목록 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagListResponse'
+              examples:
+                default:
+                  $ref: '#/components/examples/TagListResponseExample'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [Tags]
+      summary: 태그 생성
+      description: >
+        새 태그를 생성한다.
+        중복 이름은 허용하지 않는다.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagCreateRequest'
+            examples:
+              default:
+                $ref: '#/components/examples/TagCreateRequestExample'
+      responses:
+        '201':
+          description: 태그 생성 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+              examples:
+                default:
+                  $ref: '#/components/examples/TagExample'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tags/{tagId}:
+    get:
+      tags: [Tags]
+      summary: 태그 상세 조회
+      description: 단일 태그 정보를 조회한다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tagId
+          in: path
+          required: true
+          description: 조회할 태그 ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 태그 상세 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+              examples:
+                default:
+                  $ref: '#/components/examples/TagExample'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      tags: [Tags]
+      summary: 태그 수정
+      description: 태그 이름을 수정한다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tagId
+          in: path
+          required: true
+          description: 수정할 태그 ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagUpdateRequest'
+            examples:
+              default:
+                $ref: '#/components/examples/TagUpdateRequestExample'
+      responses:
+        '200':
+          description: 태그 수정 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+              examples:
+                default:
+                  $ref: '#/components/examples/TagExample'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Tags]
+      summary: 태그 삭제
+      description: >
+        태그를 삭제한다.
+        ERD의 todo_tags는 ON DELETE CASCADE로 함께 정리된다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tagId
+          in: path
+          required: true
+          description: 삭제할 태그 ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 태그 삭제 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+              examples:
+                default:
+                  value:
+                    success: true
+                    message: 태그가 삭제되었습니다.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Todo:
+      type: object
+      required:
+        - id
+        - title
+        - isCompleted
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 할 일 ID
+        title:
+          type: string
+          minLength: 1
+          description: 할 일 제목
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+          description: 마감일
+        priority:
+          type: integer
+          nullable: true
+          enum: [1, 2, 3]
+          description: 우선순위
+        isCompleted:
+          type: boolean
+          description: 완료 여부
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 완료 시각
+        createdAt:
+          type: string
+          format: date-time
+          description: 생성 시각
+        updatedAt:
+          type: string
+          format: date-time
+          description: 마지막 수정 시각
+        tags:
+          type: array
+          description: 연결된 태그 목록
+          items:
+            $ref: '#/components/schemas/Tag'
+          readOnly: true
+        tagIds:
+          type: array
+          description: 할 일에 연결할 태그 ID 목록
+          items:
+            type: string
+            format: uuid
+          writeOnly: true
+      example:
+        id: 550e8400-e29b-41d4-a716-446655440000
+        title: 주간 회의 자료 준비
+        dueDate: 2026-06-25
+        priority: 2
+        isCompleted: false
+        completedAt: null
+        createdAt: 2026-06-22T10:00:00Z
+        updatedAt: 2026-06-22T10:00:00Z
+        tags:
+          - id: 660e8400-e29b-41d4-a716-446655440001
+            name: 업무
+            createdAt: 2026-06-22T09:00:00Z
+
+    TodoCreateRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          description: 할 일 제목
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+          description: 마감일
+        priority:
+          type: integer
+          nullable: true
+          enum: [1, 2, 3]
+          description: 우선순위
+        tagIds:
+          type: array
+          nullable: true
+          description: 연결할 태그 ID 목록
+          items:
+            type: string
+            format: uuid
+      example:
+        title: 주간 회의 자료 준비
+        dueDate: 2026-06-25
+        priority: 2
+        tagIds:
+          - 660e8400-e29b-41d4-a716-446655440001
+
+    TodoUpdateRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          description: 할 일 제목
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+          description: 마감일
+        priority:
+          type: integer
+          nullable: true
+          enum: [1, 2, 3]
+          description: 우선순위
+        tagIds:
+          type: array
+          nullable: true
+          description: 연결할 태그 ID 목록
+          items:
+            type: string
+            format: uuid
+      example:
+        title: 수정된 회의 자료 준비
+        dueDate: 2026-06-26
+        priority: 3
+        tagIds:
+          - 660e8400-e29b-41d4-a716-446655440001
+
+    TodoCompletionRequest:
+      type: object
+      required:
+        - isCompleted
+      properties:
+        isCompleted:
+          type: boolean
+          description: 완료 상태
+      example:
+        isCompleted: true
+
+    TodoListResponse:
+      type: object
+      required:
+        - items
+        - page
+        - limit
+        - total
+        - totalPages
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Todo'
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+      example:
+        items:
+          - id: 550e8400-e29b-41d4-a716-446655440000
+            title: 주간 회의 자료 준비
+            dueDate: 2026-06-25
+            priority: 2
+            isCompleted: false
+            completedAt: null
+            createdAt: 2026-06-22T10:00:00Z
+            updatedAt: 2026-06-22T10:00:00Z
+            tags:
+              - id: 660e8400-e29b-41d4-a716-446655440001
+                name: 업무
+                createdAt: 2026-06-22T09:00:00Z
+        page: 1
+        limit: 20
+        total: 1
+        totalPages: 1
+
+    Tag:
+      type: object
+      required:
+        - id
+        - name
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 태그 ID
+        name:
+          type: string
+          minLength: 1
+          description: 태그 이름
+        createdAt:
+          type: string
+          format: date-time
+          description: 생성 시각
+      example:
+        id: 660e8400-e29b-41d4-a716-446655440001
+        name: 업무
+        createdAt: 2026-06-22T09:00:00Z
+
+    TagCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: 태그 이름
+      example:
+        name: 업무
+
+    TagUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: 태그 이름
+      example:
+        name: 개인
+
+    TagListResponse:
+      type: object
+      required:
+        - items
+        - page
+        - limit
+        - total
+        - totalPages
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+      example:
+        items:
+          - id: 660e8400-e29b-41d4-a716-446655440001
+            name: 업무
+            createdAt: 2026-06-22T09:00:00Z
+        page: 1
+        limit: 20
+        total: 1
+        totalPages: 1
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: 로그인 이메일
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: 비밀번호
+      example:
+        email: user@example.com
+        password: Password123!
+
+    RefreshRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+          description: 갱신 토큰
+      example:
+        refreshToken: refresh-token-value
+
+    TokenPair:
+      type: object
+      required:
+        - tokenType
+        - accessToken
+        - refreshToken
+        - expiresIn
+      properties:
+        tokenType:
+          type: string
+          enum: [Bearer]
+          description: 토큰 타입
+        accessToken:
+          type: string
+          description: JWT access token
+        refreshToken:
+          type: string
+          description: JWT refresh token
+        expiresIn:
+          type: integer
+          minimum: 1
+          description: access token 만료 시간(초)
+      example:
+        tokenType: Bearer
+        accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.access
+        refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.refresh
+        expiresIn: 3600
+
+    ActionResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          description: 성공 여부
+        message:
+          type: string
+          description: 결과 메시지
+      example:
+        success: true
+        message: 처리되었습니다.
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: 에러 코드
+          enum:
+            - INVALID_REQUEST
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - INTERNAL_ERROR
+        message:
+          type: string
+          description: 에러 메시지
+        details:
+          type: array
+          description: 필드별 상세 오류
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      example:
+        code: INVALID_REQUEST
+        message: 요청 값이 올바르지 않습니다.
+        details:
+          - field: title
+            message: 제목은 비어 있을 수 없습니다.
+
+    ErrorDetail:
+      type: object
+      required:
+        - field
+        - message
+      properties:
+        field:
+          type: string
+          description: 오류가 발생한 필드
+        message:
+          type: string
+          description: 오류 메시지
+
+  responses:
+    BadRequest:
+      description: 잘못된 요청
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              $ref: '#/components/examples/BadRequestExample'
+    Unauthorized:
+      description: 인증 실패
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              $ref: '#/components/examples/UnauthorizedExample'
+    NotFound:
+      description: 리소스를 찾을 수 없음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              $ref: '#/components/examples/NotFoundExample'
+    Conflict:
+      description: 리소스 충돌
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              $ref: '#/components/examples/ConflictExample'
+    InternalError:
+      description: 서버 내부 오류
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            default:
+              $ref: '#/components/examples/InternalErrorExample'
+
+  examples:
+    LoginRequestExample:
+      summary: 로그인 요청 예시
+      value:
+        email: user@example.com
+        password: Password123!
+    RefreshRequestExample:
+      summary: 토큰 갱신 요청 예시
+      value:
+        refreshToken: refresh-token-value
+    TokenPairExample:
+      summary: 토큰 응답 예시
+      value:
+        tokenType: Bearer
+        accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.access
+        refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.refresh
+        expiresIn: 3600
+    TodoCreateRequestExample:
+      summary: 할 일 생성 요청 예시
+      value:
+        title: 주간 회의 자료 준비
+        dueDate: 2026-06-25
+        priority: 2
+        tagIds:
+          - 660e8400-e29b-41d4-a716-446655440001
+    TodoUpdateRequestExample:
+      summary: 할 일 수정 요청 예시
+      value:
+        title: 수정된 회의 자료 준비
+        dueDate: 2026-06-26
+        priority: 3
+        tagIds:
+          - 660e8400-e29b-41d4-a716-446655440001
+    TodoExample:
+      summary: 할 일 응답 예시
+      value:
+        id: 550e8400-e29b-41d4-a716-446655440000
+        title: 주간 회의 자료 준비
+        dueDate: 2026-06-25
+        priority: 2
+        isCompleted: false
+        completedAt: null
+        createdAt: 2026-06-22T10:00:00Z
+        updatedAt: 2026-06-22T10:00:00Z
+        tags:
+          - id: 660e8400-e29b-41d4-a716-446655440001
+            name: 업무
+            createdAt: 2026-06-22T09:00:00Z
+    TodoListResponseExample:
+      summary: 할 일 목록 응답 예시
+      value:
+        items:
+          - id: 550e8400-e29b-41d4-a716-446655440000
+            title: 주간 회의 자료 준비
+            dueDate: 2026-06-25
+            priority: 2
+            isCompleted: false
+            completedAt: null
+            createdAt: 2026-06-22T10:00:00Z
+            updatedAt: 2026-06-22T10:00:00Z
+            tags:
+              - id: 660e8400-e29b-41d4-a716-446655440001
+                name: 업무
+                createdAt: 2026-06-22T09:00:00Z
+        page: 1
+        limit: 20
+        total: 1
+        totalPages: 1
+    TagCreateRequestExample:
+      summary: 태그 생성 요청 예시
+      value:
+        name: 업무
+    TagUpdateRequestExample:
+      summary: 태그 수정 요청 예시
+      value:
+        name: 개인
+    TagExample:
+      summary: 태그 응답 예시
+      value:
+        id: 660e8400-e29b-41d4-a716-446655440001
+        name: 업무
+        createdAt: 2026-06-22T09:00:00Z
+    TagListResponseExample:
+      summary: 태그 목록 응답 예시
+      value:
+        items:
+          - id: 660e8400-e29b-41d4-a716-446655440001
+            name: 업무
+            createdAt: 2026-06-22T09:00:00Z
+        page: 1
+        limit: 20
+        total: 1
+        totalPages: 1
+    BadRequestExample:
+      summary: 잘못된 요청 예시
+      value:
+        code: INVALID_REQUEST
+        message: 요청 값이 올바르지 않습니다.
+        details:
+          - field: title
+            message: 제목은 비어 있을 수 없습니다.
+    UnauthorizedExample:
+      summary: 인증 실패 예시
+      value:
+        code: UNAUTHORIZED
+        message: 인증이 필요합니다.
+    NotFoundExample:
+      summary: 리소스 없음 예시
+      value:
+        code: NOT_FOUND
+        message: 요청한 리소스를 찾을 수 없습니다.
+    ConflictExample:
+      summary: 충돌 예시
+      value:
+        code: CONFLICT
+        message: 동일한 이름의 태그가 이미 존재합니다.
+    InternalErrorExample:
+      summary: 서버 오류 예시
+      value:
+        code: INTERNAL_ERROR
+        message: 서버 내부 오류가 발생했습니다.
